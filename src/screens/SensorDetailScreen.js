@@ -1,26 +1,77 @@
-import React from 'react';
+import React, { useState, useEffect } from 'react';
 import { StyleSheet, Text, View, ScrollView, TouchableOpacity, StatusBar, Image, Dimensions } from 'react-native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-google-fonts/roboto';
+
+// --- IMPORT FIREBASE FIRESTORE ---
+import { db } from '../config/firebaseConfig';
+import { doc, onSnapshot } from 'firebase/firestore';
 
 const { width } = Dimensions.get('window');
 
 export default function SensorDetailScreen({ route, navigation }) {
-    const { title, value, unit, icon, device } = route.params;
+    const { title, unit, icon, device } = route.params;
 
-    const chartData = [
-        { tanggal: '20 Jun', waktu: '22:00', nilai: (parseFloat(value) - 0.4).toFixed(1), tinggi: 45 },
-        { tanggal: '20 Jun', waktu: '23:00', nilai: (parseFloat(value) - 0.2).toFixed(1), tinggi: 60 },
-        { tanggal: '21 Jun', waktu: '00:00', nilai: (parseFloat(value) + 0.3).toFixed(1), tinggi: 85 },
-        { tanggal: '21 Jun', waktu: '01:00', nilai: (parseFloat(value) - 0.1).toFixed(1), tinggi: 55 },
-        { tanggal: '21 Jun', waktu: '01:35', nilai: parseFloat(value).toFixed(1), tinggi: 75 },
-    ];
+    const [liveValue, setLiveValue] = useState(route.params.value || 0);
+    
+    // State dinamis untuk menampung data grafik & tabel dari database secara real-time
+    const [dynamicChartData, setDynamicChartData] = useState([]);
 
-    const historyLogs = [
-        { tanggal: '21 Jun', waktu: '01:35', data: value },
-        { tanggal: '21 Jun', waktu: '01:30', data: (parseFloat(value) - 0.2).toFixed(1) },
-        { tanggal: '21 Jun', waktu: '01:25', data: (parseFloat(value) + 0.1).toFixed(1) },
-        { tanggal: '21 Jun', waktu: '01:20', data: (parseFloat(value) - 0.1).toFixed(1) },
-    ];
+    // --- REAL-TIME SINKRONISASI FIRESTORE & TIMESTAMP ---
+    useEffect(() => {
+        const sensorDocRef = doc(db, 'data_sensor', 'inkubator_01');
+
+        const unsubscribe = onSnapshot(sensorDocRef, (snapshot) => {
+            if (snapshot.exists()) {
+                const data = snapshot.data();
+                let currentVal = 0;
+                
+                // Memetakan nilai berdasarkan parameter
+                if (unit === '°C' && title.includes('Udara')) {
+                    currentVal = data.suhu_udara ?? 0;
+                } else if (unit === '%') {
+                    currentVal = data.kelembapan ?? 0;
+                } else if (unit === '°C' && title.includes('Air')) {
+                    currentVal = data.suhu_air ?? 0;
+                } else if (unit === 'LxF') {
+                    currentVal = data.cahaya ?? 0;
+                }
+
+                setLiveValue(currentVal);
+
+                // Ambil waktu lokal saat data database diperbarui
+                const sekarang = new Date();
+                const opsiTanggal = { day: '2-digit', month: 'short' };
+                const stringTanggal = sekarang.toLocaleDateString('id-ID', opsiTanggal); // Contoh: "21 Jun"
+                const stringWaktu = sekarang.toLocaleTimeString('id-ID', { hour: '2-digit', minute: '2-digit' }); // Contoh: "15:30"
+
+                // Update grafik dan log secara berkala (Maksimal 5 data tersimpan di layar)
+                setDynamicChartData((prevData) => {
+                    const newData = [
+                        ...prevData,
+                        {
+                            tanggal: stringTanggal,
+                            waktu: stringWaktu,
+                            nilai: parseFloat(currentVal).toFixed(1),
+                            // Kalkulasi tinggi batang secara dinamis agar proporsional
+                            tinggi: unit === '°C' ? Math.max(20, Math.min(95, (currentVal / 45) * 100)) : Math.max(20, Math.min(95, (currentVal / 100) * 100))
+                        }
+                    ];
+                    // Jika data lebih dari 5, hapus data terlama (geser ke kiri)
+                    if (newData.length > 5) {
+                        newData.shift();
+                    }
+                    return newData;
+                });
+            }
+        }, (error) => {
+            console.log("Error Detail Sensor Snapshot:", error);
+        });
+
+        return () => unsubscribe();
+    }, [title, unit]);
+
+    // Membuat salinan terbalik untuk kebutuhan log riwayat tabel (dari terbaru ke terlama)
+    const reversedLogs = [...dynamicChartData].reverse();
 
     let yAxisLabels = ['100', '75', '50', '25', '0'];
     if (unit === '°C') {
@@ -35,9 +86,7 @@ export default function SensorDetailScreen({ route, navigation }) {
         Roboto_700Bold,
     });
 
-    if (!fontsLoaded) {
-        return null;
-    }
+    if (!fontsLoaded) return null;
 
     return (
         <View style={styles.container}>
@@ -53,13 +102,15 @@ export default function SensorDetailScreen({ route, navigation }) {
 
             <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
 
+                {/* Status Card */}
                 <View style={styles.statusCard}>
                     <Image source={icon} style={styles.detailIconImage} resizeMode="contain" />
                     <Text style={styles.sensorTitle}>{title}</Text>
-                    <Text style={styles.sensorValue}>{value} <Text style={styles.sensorUnit}>{unit}</Text></Text>
+                    <Text style={styles.sensorValue}>{liveValue} <Text style={styles.sensorUnit}>{unit}</Text></Text>
                     <Text style={styles.sensorDevice}>Hardware: {device}</Text>
                 </View>
 
+                {/* Grafik Tren Telemetri Dinamis */}
                 <Text style={styles.sectionTitle}>Grafik Tren Telemetri</Text>
                 <View style={styles.largeChartContainer}>
                     <View style={styles.chartMainWrapper}>
@@ -71,12 +122,16 @@ export default function SensorDetailScreen({ route, navigation }) {
 
                         <View style={styles.chartRightContent}>
                             <View style={styles.chartFrame}>
-                                {chartData.map((item, index) => (
-                                    <View key={index} style={styles.chartColGroup}>
-                                        <Text style={styles.barValueTooltip}>{item.nilai}</Text>
-                                        <View style={[styles.largeChartBar, { height: `${item.tinggi}%` }]} />
-                                    </View>
-                                ))}
+                                {dynamicChartData.length === 0 ? (
+                                    <Text style={styles.emptyText}>Menunggu data masuk...</Text>
+                                ) : (
+                                    dynamicChartData.map((item, index) => (
+                                        <View key={index} style={styles.chartColGroup}>
+                                            <Text style={styles.barValueTooltip}>{item.nilai}</Text>
+                                            <View style={[styles.largeChartBar, { height: `${item.tinggi}%` }]} />
+                                        </View>
+                                    ))
+                                )}
                             </View>
                         </View>
                     </View>
@@ -84,7 +139,7 @@ export default function SensorDetailScreen({ route, navigation }) {
                     <View style={styles.xAxisWrapper}>
                         <View style={{ width: 32 }} />
                         <View style={styles.xAxisLabelsRow}>
-                            {chartData.map((item, index) => (
+                            {dynamicChartData.map((item, index) => (
                                 <View key={index} style={styles.xAxisContainer}>
                                     <Text style={styles.chartXDate}>{item.tanggal}</Text>
                                     <Text style={styles.chartXTime}>{item.waktu}</Text>
@@ -94,20 +149,25 @@ export default function SensorDetailScreen({ route, navigation }) {
                     </View>
                 </View>
 
+                {/* Log Riwayat Pengukuran Dinamis */}
                 <Text style={styles.sectionTitle}>Log Riwayat Pengukuran</Text>
                 <View style={styles.tableCard}>
                     <View style={styles.tableHeaderRow}>
                         <Text style={styles.tableHeadText}>Waktu Pengambilan</Text>
                         <Text style={[styles.tableHeadText, { textAlign: 'right' }]}>Nilai Terbaca</Text>
                     </View>
-                    {historyLogs.map((log, index) => (
-                        <View key={index} style={styles.tableDataRow}>
-                            <View style={styles.timeCellWrapper}>
-                                <Text style={styles.tableCellTime}>{log.tanggal} - {log.waktu} WIB</Text>
+                    {reversedLogs.length === 0 ? (
+                        <Text style={[styles.emptyText, { paddingVertical: 14 }]}>Belum ada riwayat data.</Text>
+                    ) : (
+                        reversedLogs.map((log, index) => (
+                            <View key={index} style={styles.tableDataRow}>
+                                <View style={styles.timeCellWrapper}>
+                                    <Text style={styles.tableCellTime}>{log.tanggal} - {log.waktu} WIB</Text>
+                                </View>
+                                <Text style={styles.tableCellData}>{log.nilai} {unit}</Text>
                             </View>
-                            <Text style={styles.tableCellData}>{log.data} {unit}</Text>
-                        </View>
-                    ))}
+                        ))
+                    )}
                 </View>
 
             </ScrollView>
@@ -123,7 +183,7 @@ const styles = StyleSheet.create({
         paddingBottom: 16,
         paddingHorizontal: 20,
         flexDirection: 'row',
-        justifyContent: 'space-between',
+        justify: 'space-between',
         alignItems: 'center',
         borderBottomWidth: 1,
         borderColor: '#EAEAEA',
@@ -140,11 +200,7 @@ const styles = StyleSheet.create({
         marginBottom: 24,
         elevation: 2,
     },
-    detailIconImage: {
-        width: 48,
-        height: 48,
-        marginBottom: 10,
-    },
+    detailIconImage: { width: 48, height: 48, marginBottom: 10 },
     sensorTitle: { fontFamily: 'Roboto_500Medium', fontSize: 15, color: '#888888' },
     sensorValue: { fontFamily: 'Roboto_700Bold', fontSize: 38, color: '#1A1A1A', marginTop: 4 },
     sensorUnit: { fontSize: 20, color: '#F25C05' },
@@ -171,4 +227,5 @@ const styles = StyleSheet.create({
     timeCellWrapper: { flexDirection: 'row', alignItems: 'center' },
     tableCellTime: { fontFamily: 'Roboto_400Regular', fontSize: 13, color: '#333333' },
     tableCellData: { fontFamily: 'Roboto_700Bold', fontSize: 13, color: '#1A1A1A' },
+    emptyText: { fontFamily: 'Roboto_400Regular', color: '#A0AEC0', fontSize: 13, width: '100%', textAlign: 'center' }
 });

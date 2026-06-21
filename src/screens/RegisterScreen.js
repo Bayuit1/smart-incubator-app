@@ -1,17 +1,81 @@
 import React, { useState } from 'react';
-import { StyleSheet, Text, View, TextInput, TouchableOpacity, StatusBar, KeyboardAvoidingView, Platform, ScrollView, Image } from 'react-native';
+import { StyleSheet, Text, View, TextInput, TouchableOpacity, StatusBar, KeyboardAvoidingView, Platform, ScrollView, Image, Alert, ActivityIndicator } from 'react-native';
 import { useFonts, Roboto_400Regular, Roboto_500Medium, Roboto_700Bold } from '@expo-google-fonts/roboto';
+
+// --- 1. IMPORT FIRESTORE DB BERDASARKAN STRUKTUR FOLDER ANDA ---
+import { db } from '../config/firebaseConfig';
+import { collection, addDoc, query, where, getDocs } from 'firebase/firestore';
 
 export default function RegisterScreen({ navigation }) {
     const [name, setName] = useState('');
     const [email, setEmail] = useState('');
     const [password, setPassword] = useState('');
+    const [loading, setLoading] = useState(false); // State untuk efek loading
 
     let [fontsLoaded] = useFonts({
         Roboto_400Regular,
         Roboto_500Medium,
         Roboto_700Bold,
     });
+
+    // --- 2. LOGIKA MENYIMPAN DATA REGISTRASI KE FIRESTORE ---
+    const handleRegister = async () => {
+        const cleanName = name.trim();
+        const cleanEmail = email.trim().toLowerCase();
+        const cleanPassword = password.trim();
+
+        // Validasi input kosong
+        if (!cleanName || !cleanEmail || !cleanPassword) {
+            Alert.alert('Error', 'Harap isi semua kolom form pendaftaran!');
+            return;
+        }
+
+        // Validasi panjang password minimal (contoh: 6 karakter)
+        if (cleanPassword.length < 6) {
+            Alert.alert('Error', 'Kata sandi minimal harus terdiri dari 6 karakter.');
+            return;
+        }
+
+        setLoading(true);
+
+        try {
+            const usersRef = collection(db, 'users');
+            
+            // Pengecekan: Apakah email sudah terdaftar sebelumnya?
+            const q = query(usersRef, where('email', '==', cleanEmail));
+            const querySnapshot = await getDocs(q);
+
+            if (!querySnapshot.empty) {
+                Alert.alert('Gagal Daftar', 'Alamat email ini sudah terdaftar. Gunakan email lain.');
+                setLoading(false);
+                return;
+            }
+
+            // Simpan data user baru ke Firestore
+            await addDoc(usersRef, {
+                name: cleanName,
+                email: cleanEmail,
+                password: cleanPassword, // Catatan: Plain text, untuk produksi disarankan Firebase Auth
+                createdAt: new Date().toISOString()
+            });
+
+            // Berhasil mendaftar
+            Alert.alert('Sukses', 'Akun Anda berhasil dibuat!', [
+                { text: 'Login Sekarang', onPress: () => navigation.navigate('Login') }
+            ]);
+
+            // Reset Form setelah sukses
+            setName('');
+            setEmail('');
+            setPassword('');
+
+        } catch (error) {
+            console.error("Firestore Register Error: ", error);
+            Alert.alert('Error', 'Terjadi kesalahan saat mendaftarkan akun. Silakan coba lagi.');
+        } finally {
+            setLoading(false);
+        }
+    };
 
     if (!fontsLoaded) {
         return null;
@@ -25,7 +89,7 @@ export default function RegisterScreen({ navigation }) {
             <StatusBar barStyle="dark-content" backgroundColor="#FFFFFF" translucent={false} />
 
             <ScrollView contentContainerStyle={styles.scrollContainer} showsVerticalScrollIndicator={false}>
-                {/* Header Bagian Atas - Menggunakan Logo Centered */}
+                {/* Header Bagian Atas */}
                 <View style={styles.headerContainer}>
                     <Image
                         source={require('../../assets/logo.png')}
@@ -47,6 +111,7 @@ export default function RegisterScreen({ navigation }) {
                             placeholderTextColor="#999"
                             value={name}
                             onChangeText={setName}
+                            editable={!loading} // Kunci form saat loading
                         />
                     </View>
 
@@ -61,6 +126,7 @@ export default function RegisterScreen({ navigation }) {
                             onChangeText={setEmail}
                             keyboardType="email-address"
                             autoCapitalize="none"
+                            editable={!loading}
                         />
                     </View>
 
@@ -75,23 +141,29 @@ export default function RegisterScreen({ navigation }) {
                             onChangeText={setPassword}
                             secureTextEntry
                             autoCapitalize="none"
+                            editable={!loading}
                         />
                     </View>
 
-                    {/* Tombol Daftar */}
+                    {/* Tombol Daftar dengan Loading State */}
                     <TouchableOpacity
-                        style={styles.registerButton}
+                        style={[styles.registerButton, loading && { backgroundColor: '#FFA066' }]}
                         activeOpacity={0.85}
-                        onPress={() => alert('Fungsi registrasi akun akan dihandle Anggota 3 via Firebase!')}
+                        onPress={handleRegister}
+                        disabled={loading}
                     >
-                        <Text style={styles.registerButtonText}>Daftar</Text>
+                        {loading ? (
+                            <ActivityIndicator color="#FFFFFF" size="small" />
+                        ) : (
+                            <Text style={styles.registerButtonText}>Daftar</Text>
+                        )}
                     </TouchableOpacity>
                 </View>
 
                 {/* Footer: Kembali ke Login */}
                 <View style={styles.footerContainer}>
                     <Text style={styles.footerText}>Sudah memiliki akun? </Text>
-                    <TouchableOpacity onPress={() => navigation.navigate('Login')}>
+                    <TouchableOpacity onPress={() => navigation.navigate('Login')} disabled={loading}>
                         <Text style={styles.loginLink}>Login di sini</Text>
                     </TouchableOpacity>
                 </View>
@@ -160,7 +232,7 @@ const styles = StyleSheet.create({
     },
     registerButton: {
         width: '100%',
-        backgroundColor: '#F25C05', // Tetap konsisten oranye brand E-NDOG
+        backgroundColor: '#F25C05',
         paddingVertical: 16,
         borderRadius: 12,
         alignItems: 'center',
