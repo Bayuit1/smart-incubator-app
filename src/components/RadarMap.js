@@ -1,16 +1,14 @@
 import React from 'react';
-import { StyleSheet, View } from 'react-native';
+import { StyleSheet, View, Dimensions } from 'react-native';
 import { WebView } from 'react-native-webview';
 
-export default function RadarMap({ selectedTengkulak, onSelectTengkulak }) {
+const { width } = Dimensions.get('window');
 
-    const colorTengkulak1 = selectedTengkulak === 1 ? '#F2A505' : '#64748B';
-    const colorTengkulak2 = selectedTengkulak === 2 ? '#F2A505' : '#64748B';
-    const colorTengkulak3 = selectedTengkulak === 3 ? '#F2A505' : '#64748B';
-
-    const radius1 = selectedTengkulak === 1 ? 11 : 7;
-    const radius2 = selectedTengkulak === 2 ? 11 : 7;
-    const radius3 = selectedTengkulak === 3 ? 11 : 7;
+// Tambahkan prop dataMitra untuk menangkap data dari TengkulakScreen
+export default function RadarMap({ dataMitra = [], selectedTengkulak, onSelectTengkulak }) {
+    
+    // Mengubah array objek dari React Native menjadi string JSON agar bisa dibaca oleh JavaScript di dalam WebView
+    const dataMitraJSON = JSON.stringify(dataMitra);
 
     const leafletHTML = `
     <!DOCTYPE html>
@@ -29,23 +27,18 @@ export default function RadarMap({ selectedTengkulak, onSelectTengkulak }) {
     <body>
       <div id="map"></div>
       <script>
-        // Inisialisasi map tanpa memberikan parameter setView statis di awal
         var map = L.map('map', { zoomControl: false });
 
         L.tileLayer('https://{s}.basemaps.cartocdn.com/rastertiles/voyager/{z}/{x}/{y}{r}.png', {
           maxZoom: 19
         }).addTo(map);
 
-        // Kumpulan seluruh titik koordinat alamat (Index 0 = Inkubator, sisanya Tengkulak)
-        var points = [
-          [-7.4478, 112.7183], // Inkubator E-NDOG
-          [-7.4121, 112.5872], // Haji Supriatna (Krian)
-          [-7.3311, 112.7618], // PT Agro Telur Makmur (Rungkut)
-          [-7.2847, 112.7964]  // Cak Mahmud Mandiri (Sukolilo)
-        ];
+        // Kordinat Pusat Inkubator
+        var inkubatorCoords = [-7.4478, 112.7183];
+        var allPoints = [inkubatorCoords];
 
         // 1. Marker Inkubator E-NDOG (Titik Pusat Utama)
-        L.circleMarker(points[0], {
+        L.circleMarker(inkubatorCoords, {
           color: '#F25C05',
           fillColor: '#F25C05',
           fillOpacity: 0.85,
@@ -53,41 +46,39 @@ export default function RadarMap({ selectedTengkulak, onSelectTengkulak }) {
           weight: 3
         }).addTo(map);
 
-        // 2. Marker Tengkulak 1
-        var m1 = L.circleMarker(points[1], {
-          color: '${colorTengkulak1}',
-          fillColor: '${colorTengkulak1}',
-          fillOpacity: 0.9,
-          radius: ${radius1},
-          weight: 2
-        }).addTo(map);
-        m1.on('click', function() { window.ReactNativeWebView.postMessage('1'); });
+        // 2. Menerima data dinamis dari React Native
+        var mitraList = ${dataMitraJSON};
+        var activeId = "${selectedTengkulak}";
 
-        // 3. Marker Tengkulak 2
-        var m2 = L.circleMarker(points[2], {
-          color: '${colorTengkulak2}',
-          fillColor: '${colorTengkulak2}',
-          fillOpacity: 0.9,
-          radius: ${radius2},
-          weight: 2
-        }).addTo(map);
-        m2.on('click', function() { window.ReactNativeWebView.postMessage('2'); });
+        // 3. Looping untuk membuat marker sebanyak jumlah data dari API
+        mitraList.forEach(function(mitra) {
+            var coords = [mitra.latitude, mitra.longitude];
+            allPoints.push(coords); // Simpan koordinat untuk keperluan auto-zoom nanti
 
-        // 4. Marker Tengkulak 3
-        var m3 = L.circleMarker(points[3], {
-          color: '${colorTengkulak3}',
-          fillColor: '${colorTengkulak3}',
-          fillOpacity: 0.9,
-          radius: ${radius3},
-          weight: 2
-        }).addTo(map);
-        m3.on('click', function() { window.ReactNativeWebView.postMessage('3'); });
+            // Menentukan warna dan ukuran berdasarkan status seleksi
+            var isSelected = String(mitra.id) === String(activeId);
+            var pinColor = isSelected ? '#F2A505' : '#64748B';
+            var pinRadius = isSelected ? 11 : 7;
 
-        // OTOMATIS LOCK DI TENGAH BERDASARKAN SELURUH ALAMAT MARKER
-        // Parameter padding [30, 30] berfungsi memberikan jarak napas agar pin di ujung tidak menempel ke tepi layar
-        var bounds = L.latLngBounds(points);
-        map.fitBounds(bounds, { padding: [30, 30] });
+            var marker = L.circleMarker(coords, {
+                color: pinColor,
+                fillColor: pinColor,
+                fillOpacity: 0.9,
+                radius: pinRadius,
+                weight: 2
+            }).addTo(map);
 
+            // Menambahkan event klik untuk mengirim ID kembali ke React Native
+            marker.on('click', function() { 
+                window.ReactNativeWebView.postMessage(String(mitra.id)); 
+            });
+        });
+
+        // 4. OTOMATIS LOCK DI TENGAH BERDASARKAN SELURUH ALAMAT MARKER
+        if (allPoints.length > 0) {
+            var bounds = L.latLngBounds(allPoints);
+            map.fitBounds(bounds, { padding: [30, 30] });
+        }
       </script>
     </body>
     </html>
@@ -100,7 +91,8 @@ export default function RadarMap({ selectedTengkulak, onSelectTengkulak }) {
                 source={{ html: leafletHTML }}
                 style={styles.map}
                 onMessage={(event) => {
-                    const id = parseInt(event.nativeEvent.data);
+                    // Menerima pesan ID dari dalam WebView dan meneruskannya ke state utama
+                    const id = event.nativeEvent.data;
                     onSelectTengkulak(id);
                 }}
                 javaScriptEnabled={true}
