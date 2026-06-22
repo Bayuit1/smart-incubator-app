@@ -16,7 +16,7 @@ Berikut adalah detail pembagian peran dan tanggung jawab pengerjaan proyek, yang
 
 ---
 
-## 🛠️ Daftar API & Layanan Backend-as-a-Service
+## Daftar API & Layanan Backend-as-a-Service
 
 Sesuai ketentuan teknis, aplikasi ini mengintegrasikan tiga pilar arsitektur data eksternal:
 1.  **Layanan Firebase (Backend-as-a-Service):** Menggunakan *Cloud Firestore* untuk sinkronisasi telemetri sensor, manajemen status aktuator, dan pencatatan riwayat sistem.
@@ -25,7 +25,7 @@ Sesuai ketentuan teknis, aplikasi ini mengintegrasikan tiga pilar arsitektur dat
 
 ---
 
-## 🎯 3 Fitur Utama untuk Pendemokan Ujian
+## 3 Fitur Utama untuk Demo Ujian
 
 Berikut adalah 3 fitur utama pilihan yang akan didemokan alur kodenya oleh masing-masing saat penilaian individuaL:
 
